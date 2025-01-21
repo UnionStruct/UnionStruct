@@ -1,0 +1,8 @@
+﻿<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests\UnionStruct.ConsoleTest\UnionStruct.ConsoleTest.csproj" Type="Classic C#" />
+  </Folder>
+  <Folder Name="lib">
+    <Project Path="lib\UnionStruct.Core\UnionStruct.Core.csproj" Type="Classic C#" />
+  </Folder>
+</Solution>

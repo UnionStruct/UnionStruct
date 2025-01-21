@@ -1,0 +1,9 @@
+{
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "UnionStruct.Core": {
+      "commandName": "DebugRoslynComponent",
+      "targetProject": "../../tests/UnionStruct.ConsoleTest/UnionStruct.ConsoleTest.csproj"
+    }
+  }
+}
