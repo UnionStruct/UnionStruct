@@ -2,12 +2,22 @@
 
 using UnionStruct.ConsoleTest;
 
-Console.WriteLine("131");
-// var result = Result<int>.Success(123).Fold(
-//     x => x.ToString(),
-//     ex => ex.ToString()
-// );
-//
-// var either = Either<int, string>.Left(123);
-//
-// var option = Option<int>.None.MapSome(x => x * 1213);
+var option = await Option<DateTimeOffset>.Some(DateTimeOffset.UtcNow)
+    .MapSome(async x =>
+    {
+        await Task.Delay(x.Year);
+        return x.Year;
+    });
+
+_ = option.Fold(
+    x =>
+    {
+        Console.WriteLine(x);
+        return 1;
+    },
+    () =>
+    {
+        Console.WriteLine("Sosat");
+        return 2;
+    }
+);

@@ -56,6 +56,13 @@ public static class UnionCodeGenerator
 
             unvaluedStateMethodsDeclaration = string.Join("\n", unvaluedEnums.Select(x =>
                 $"public bool Is{x}() => State == {descriptor.StructName}State.{x};"));
+
+            var unvaluedIfStateMethodsDeclaration = string.Join("\n", unvaluedEnums.Select(
+                x =>
+                    $"public {descriptor.StructName}{genericDeclaration} If{x}(Action body) {{ if (State == {descriptor.StructName}State.{x}) {{ body(); }} return this; }}"
+            ));
+
+            unvaluedStateMethodsDeclaration += "\n" + unvaluedIfStateMethodsDeclaration;
         }
 
         var staticMethodsDeclaration = string.Join('\n', descriptor.Fields.Select(
@@ -64,14 +71,19 @@ public static class UnionCodeGenerator
         ));
 
         var methodsDeclaration = string.Join("\n",
-            descriptor.Fields.Select(f => GenerateTryGet(f, enumMap[f.Name], $"{descriptor.StructName}State"))
+            descriptor.Fields.Select(f => GenerateTryGet(f, enumMap[f.Name], $"{descriptor.StructName}State",
+                $"{descriptor.StructName}{genericDeclaration}"))
         );
 
         var foldMethodDeclaration = GenerateFold(descriptor.Fields, enumMap, unvaluedEnums);
 
-        var mapMethodsDeclaration =
-            GenerateMapMethods(descriptor.Fields, enumMap, unvaluedEnums, descriptor.GenericParameters,
-                descriptor.StructName, genericDeclaration);
+        var mapMethodsDeclaration = GenerateMapMethods(
+            descriptor.Fields,
+            enumMap,
+            unvaluedEnums,
+            descriptor.GenericParameters,
+            descriptor.StructName
+        );
 
         var namespaceDeclaration = $"namespace {descriptor.Namespace ?? $"UnionStruct.Generated.{descriptor.StructName}"};";
 
@@ -80,8 +92,8 @@ public static class UnionCodeGenerator
             "using System.Runtime.InteropServices;"
         ]));
 
-        var nullableDeclaration = "#nullable enable";
-        var layoutStructDeclaration = "[StructLayout(LayoutKind.Auto)]";
+        const string nullableDeclaration = "#nullable enable";
+        const string layoutStructDeclaration = "[StructLayout(LayoutKind.Auto)]";
 
         return usingsDeclaration + "\n\n"
                                  + nullableDeclaration + "\n\n"
@@ -107,8 +119,7 @@ public static class UnionCodeGenerator
         ImmutableDictionary<string, string> stateEnumMap,
         ImmutableArray<string> unvaluedEnums,
         ImmutableArray<string> genericParams,
-        string structName,
-        string structGenerics
+        string structName
     )
     {
         var sb = new StringBuilder();
@@ -142,6 +153,63 @@ public static class UnionCodeGenerator
                 .AppendLine(mainSwitch)
                 .AppendLine(restSwitch)
                 .AppendLine("};");
+
+            var bindMethodDeclaration =
+                $"public {structName}{outcomeParams} Map{stateEnumMap[descriptor.Name]}<TOut>(Func<{descriptor.Type}, {structName}{outcomeParams}> mapper)";
+
+            var bindMainSwitch =
+                $"_ when Is{stateEnumMap[descriptor.Name]}(out var x) => mapper(x),";
+
+            var bindRestSwitch = string.Join('\n', descriptors
+                .Where(x => x.Name != descriptor.Name)
+                .Select(x =>
+                    $"_ when Is{stateEnumMap[x.Name]}(out var x) =>{structName}{outcomeParams}.{stateEnumMap[x.Name]}(x),")
+                .Concat(unvaluedEnums.Select(x => $"_ when Is{x}() => {structName}{outcomeParams}.{x},"))
+                .Append("_ => throw new NotImplementedException()"));
+
+            sb.AppendLine().Append(bindMethodDeclaration).AppendLine(" => this switch")
+                .AppendLine("{")
+                .AppendLine(bindMainSwitch)
+                .AppendLine(bindRestSwitch)
+                .AppendLine("};");
+
+            var asyncMethodDeclaration =
+                $"public Task<{structName}{outcomeParams}> Map{stateEnumMap[descriptor.Name]}<TOut>(Func<{descriptor.Type}, Task<TOut>> mapper)";
+
+            var asyncMainSwitch =
+                $"_ when Is{stateEnumMap[descriptor.Name]}(out var x) => mapper(x).ContinueWith(t => t switch {{ {{ Exception: null }} => {structName}{outcomeParams}.{stateEnumMap[descriptor.Name]}(t.Result), _ => throw new InvalidOperationException(\"Error when mapping\") }}),";
+
+            var asyncRestSwitch = string.Join('\n', descriptors
+                .Where(x => x.Name != descriptor.Name)
+                .Select(x =>
+                    $"_ when Is{stateEnumMap[x.Name]}(out var x) => Task.FromResult({structName}{outcomeParams}.{stateEnumMap[x.Name]}(x)),")
+                .Concat(unvaluedEnums.Select(x => $"_ when Is{x}() => Task.FromResult({structName}{outcomeParams}.{x}),"))
+                .Append($"_ => Task.FromException<{structName}{outcomeParams}>(new NotImplementedException())"));
+
+            sb.AppendLine().Append(asyncMethodDeclaration).AppendLine(" => this switch")
+                .AppendLine("{")
+                .AppendLine(asyncMainSwitch)
+                .AppendLine(asyncRestSwitch)
+                .AppendLine("};");
+
+            var asyncBindMethodDeclaration =
+                $"public Task<{structName}{outcomeParams}> Map{stateEnumMap[descriptor.Name]}<TOut>(Func<{descriptor.Type}, Task<{structName}{outcomeParams}>> mapper)";
+
+            var asyncBindMainSwitch =
+                $"_ when Is{stateEnumMap[descriptor.Name]}(out var x) => mapper(x),";
+
+            var asyncBindRestSwitch = string.Join('\n', descriptors
+                .Where(x => x.Name != descriptor.Name)
+                .Select(x =>
+                    $"_ when Is{stateEnumMap[x.Name]}(out var x) => Task.FromResult({structName}{outcomeParams}.{stateEnumMap[x.Name]}(x)),")
+                .Concat(unvaluedEnums.Select(x => $"_ when Is{x}() => Task.FromResult({structName}{outcomeParams}.{x}),"))
+                .Append($"_ => Task.FromException<{structName}{outcomeParams}>(new NotImplementedException())"));
+
+            sb.AppendLine().Append(asyncBindMethodDeclaration).AppendLine(" => this switch")
+                .AppendLine("{")
+                .AppendLine(asyncBindMainSwitch)
+                .AppendLine(asyncBindRestSwitch)
+                .AppendLine("};");
         }
 
         return sb.ToString();
@@ -173,7 +241,8 @@ public static class UnionCodeGenerator
         return switchFunction;
     }
 
-    private static string GenerateTryGet(UnionTypeDescriptor descriptor, string stateEnumName, string enumType)
+    private static string GenerateTryGet(UnionTypeDescriptor descriptor, string stateEnumName, string enumType,
+        string fullStructType)
     {
         const string returnTrueStatement = "return true;";
         const string returnFalseStatement = "return false;";
@@ -183,16 +252,25 @@ public static class UnionCodeGenerator
         var ifBody = $"value = {descriptor.Name}!;";
         const string elseBody = "value = default;";
 
-        return methodDeclaration + "\n"
-                                 + "{" + "\n"
-                                 + ifDeclaration + "\n"
-                                 + "{" + "\n"
-                                 + ifBody + "\n"
-                                 + returnTrueStatement + "\n"
-                                 + "}" + "\n"
-                                 + elseBody + "\n"
-                                 + returnFalseStatement + "\n"
-                                 + "}" + "\n";
+        var isMethod = methodDeclaration + "\n"
+                                         + "{" + "\n"
+                                         + ifDeclaration + "\n"
+                                         + "{" + "\n"
+                                         + ifBody + "\n"
+                                         + returnTrueStatement + "\n"
+                                         + "}" + "\n"
+                                         + elseBody + "\n"
+                                         + returnFalseStatement + "\n"
+                                         + "}" + "\n";
+
+        var ifMethodBody = $"if (Is{stateEnumName}(out var value)) {{ action(value); }} return this;";
+        var ifMethodDeclaration = $"public {fullStructType} If{stateEnumName}(Action<{descriptor.Type}> action)" + "\n"
+            + "{" + "\n"
+            + ifMethodBody
+            + "}" + "\n";
+
+        return isMethod + "\n"
+                        + ifMethodDeclaration + "\n";
     }
 
     private static string SanitizeState(string state)
