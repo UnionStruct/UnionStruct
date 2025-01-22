@@ -3,6 +3,8 @@ using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using UnionStruct.CodeGeneration;
+using UnionStruct.Unions;
 
 namespace UnionStruct.Generators;
 
@@ -15,50 +17,57 @@ public class UnionGenerator : ISourceGenerator
 
     public void Execute(GeneratorExecutionContext context)
     {
-        var declaredEnums = context.Compilation.SyntaxTrees
-            .SelectMany(tree => tree.GetRoot().DescendantNodes())
-            .OfType<EnumDeclarationSyntax>()
+        var types = context.Compilation.SyntaxTrees
+            .SelectMany(tree => tree.GetRoot().DescendantNodes()).OfType<StructDeclarationSyntax>()
+            .Where(tree => tree.Modifiers.Any(m => m.Text == "partial")
+                           && tree.AttributeLists.SelectMany(a => a.Attributes).Any(x => x.Name.ToString() == "Union"))
             .Select(tree => new
             {
-                DeclaredEnumType = tree.Identifier.Text,
-                DeclaredEnumValues = tree.Members.Select(x => x.Identifier.Text).ToImmutableArray()
+                NamespaceTree = tree.Parent as BaseNamespaceDeclarationSyntax,
+                StructTree = tree,
+                FieldsTree = tree.DescendantNodes().OfType<FieldDeclarationSyntax>()
+                    .Where(field =>
+                        field.AttributeLists.SelectMany(a => a.Attributes).Any(x => x.Name.ToString() == "UnionPart"))
+                    .ToList()
             })
-            .ToImmutableDictionary(x => x.DeclaredEnumType, x => x.DeclaredEnumValues);
+            .Select(trees => new UnionDescriptor(
+                trees.NamespaceTree?.Name.ToString(),
+                trees.StructTree.Identifier.ToString(),
+                trees.StructTree.DescendantNodes().OfType<TypeParameterSyntax>().Select(x => x.Identifier.ToString()).ToImmutableArray(),
+                trees.FieldsTree.Select(f => new UnionTypeDescriptor(
+                    f.Declaration.Variables.Single().Identifier.ToString(),
+                    f.DescendantNodes().OfType<TypeSyntax>().Last().ToString(),
+                    f.AttributeLists.SelectMany(a => a.Attributes)
+                        .Where(a => a.ToString().StartsWith("UnionPart"))
+                        .SelectMany(a =>
+                            a.ArgumentList?.Arguments.Select(arg => Extensions.ParseArgumentSyntax(arg.ToString()))
+                            ?? []
+                        )
+                        .ToImmutableDictionary(x => x.Argument, x => x.Value)
+                )).ToImmutableArray()
+            ))
+            .ToImmutableArray();
 
-        var types = context.Compilation.SyntaxTrees
-            .SelectMany(tree => tree.GetRoot().DescendantNodes())
-            .OfType<StructDeclarationSyntax>()
-            .Where(tree => tree.Modifiers.Any(m => m.Text == "partial")
-                           && tree.AttributeLists.Any(a => a.Attributes.Any(aa => aa.Name.ToString().StartsWith("Union<"))))
-            .Select(x => new
-            {
-                StructName = x.Identifier.Text,
-                UnionType = x.AttributeLists
-                    .SelectMany(a => a.Attributes.Select(aa => aa.Name.ToString()))
-                    .Where(name => name.StartsWith("Union<"))
-                    .Select(Extensions.ExtractUnionType)
-                    .Single()
-            })
-            .ToImmutableDictionary(x => x.StructName, x => x.UnionType);
-
-        var unionTypes = types.Join(
-            declaredEnums,
-            x => x.Value,
-            x => x.Key,
-            (x, y) => new UnionDescriptor(x.Key, y.Value)
-        ).ToImmutableArray();
+        foreach (var unionDescriptor in types)
+        {
+            var code = UnionCodeGenerator.GenerateUnionPartialImplementation(unionDescriptor);
+            context.AddSource($"{unionDescriptor.StructName}.Generated.cs", code);
+        }
     }
 }
 
 file static class Extensions
 {
-    public static string ExtractUnionType(string declaration)
+    public static (string Argument, string Value) ParseArgumentSyntax(string syntax)
     {
-        var span = declaration.AsSpan();
-        var openBracket = declaration.IndexOf('<') + 1;
-        var slice = span[openBracket..];
-        var slice2 = slice[..^1];
+        var span = syntax.AsSpan();
+        var index = span.IndexOf('=');
+        var hasSpaceBefore = span.IndexOf(' ') is { } x && x + 1 == index;
+        var hasSpaceAfter = span.LastIndexOf(' ') is { } y && y - 1 == index;
 
-        return slice2.ToString();
+        var argumentName = span[..(index - (hasSpaceBefore ? 1 : 0))];
+        var argumentValue = span[(index + 1 + (hasSpaceAfter ? 1 : 0))..];
+
+        return (argumentName.ToString(), argumentValue.ToString());
     }
 }

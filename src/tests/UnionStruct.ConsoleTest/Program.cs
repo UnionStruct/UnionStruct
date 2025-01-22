@@ -1,18 +1,8 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
-using UnionStruct.Unions;
+using UnionStruct.ConsoleTest;
 
 Console.WriteLine("Hello, World!");
 
-[Union<UnionTypes>]
-public readonly partial struct TestUnion
-{
-    [UnionType(UnionTypes.Ok)] private readonly int _value;
-    private readonly Exception _exception;
-}
-
-enum UnionTypes
-{
-    Ok,
-    Fail
-}
+var test1 = TestUnion<int>.AsValue(123);
+var test2 = TestUnion<int>.AsFail(new Exception("sosi"));
