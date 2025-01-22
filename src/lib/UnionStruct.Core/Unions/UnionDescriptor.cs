@@ -5,17 +5,25 @@ namespace UnionStruct.Unions;
 
 public readonly struct UnionDescriptor
 {
-    public UnionDescriptor(string? ns, string structName, ImmutableArray<string> genericParameters,ImmutableArray<UnionTypeDescriptor> fields)
+    public UnionDescriptor(
+        string? ns,
+        string structName,
+        ImmutableArray<string> genericParameters,
+        ImmutableDictionary<string, string> unvaluedStates,
+        ImmutableArray<UnionTypeDescriptor> fields
+    )
     {
         Namespace = ns;
         StructName = structName;
         GenericParameters = genericParameters;
+        UnvaluedStates = unvaluedStates;
         Fields = fields;
     }
 
     public string? Namespace { get; }
     public string StructName { get; }
     public ImmutableArray<string> GenericParameters { get; }
+    public ImmutableDictionary<string, string> UnvaluedStates { get; }
     public ImmutableArray<UnionTypeDescriptor> Fields { get; }
 }
 

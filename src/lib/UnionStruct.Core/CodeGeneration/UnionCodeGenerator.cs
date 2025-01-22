@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text;
 using UnionStruct.Unions;
 
 namespace UnionStruct.CodeGeneration;
@@ -19,10 +20,12 @@ public static class UnionCodeGenerator
                     : SanitizeField(x.Name)
             );
 
-        var enumValues = string.Join(',', enumMap.Values);
+        var unvaluedEnums = descriptor.UnvaluedStates.Values.Select(SanitizeState).ToImmutableArray();
+
+        var enumValues = string.Join(',', enumMap.Values.Concat(unvaluedEnums));
 
         var genericParameters = string.Join(',', descriptor.GenericParameters);
-        var genericDeclaration = $"<{genericParameters}>";
+        var genericDeclaration = genericParameters == string.Empty ? string.Empty : $"<{genericParameters}>";
 
         var enumDeclaration = $"public enum {descriptor.StructName}State {{ {enumValues} }}";
 
@@ -40,33 +43,133 @@ public static class UnionCodeGenerator
                 $"private {descriptor.StructName}({field.Type} arg) => {fieldsTuple} = {FormatDefaultExcept(fieldsTupleInit, paramsCount, i, $"{descriptor.StructName}State.{enumMap[field.Name]}")};"
         ));
 
+        var stateConstructorDeclaration = string.Empty;
+        var unvaluedStateStaticMembersDeclaration = string.Empty;
+        var unvaluedStateMethodsDeclaration = string.Empty;
+        if (unvaluedEnums.Length != 0)
+        {
+            stateConstructorDeclaration =
+                $"private {descriptor.StructName}({descriptor.StructName}State arg) => {fieldsTuple} = {FormatDefaultExcept(fieldsTupleInit, paramsCount, paramsCount + 1, "arg")};";
+
+            unvaluedStateStaticMembersDeclaration = string.Join("\n", unvaluedEnums.Select(x =>
+                $"public static readonly {descriptor.StructName}{genericDeclaration} {x} = new({descriptor.StructName}State.{x});"));
+
+            unvaluedStateMethodsDeclaration = string.Join("\n", unvaluedEnums.Select(x =>
+                $"public bool Is{x}() => State == {descriptor.StructName}State.{x};"));
+        }
+
         var staticMethodsDeclaration = string.Join('\n', descriptor.Fields.Select(
             field =>
-                $"public static {descriptor.StructName}{genericDeclaration} As{enumMap[field.Name]}({field.Type} arg) => new(arg);"
+                $"public static {descriptor.StructName}{genericDeclaration} {enumMap[field.Name]}({field.Type} arg) => new(arg);"
         ));
 
         var methodsDeclaration = string.Join("\n",
             descriptor.Fields.Select(f => GenerateTryGet(f, enumMap[f.Name], $"{descriptor.StructName}State"))
         );
 
+        var foldMethodDeclaration = GenerateFold(descriptor.Fields, enumMap, unvaluedEnums);
+
+        var mapMethodsDeclaration =
+            GenerateMapMethods(descriptor.Fields, enumMap, unvaluedEnums, descriptor.GenericParameters,
+                descriptor.StructName, genericDeclaration);
+
         var namespaceDeclaration = $"namespace {descriptor.Namespace ?? $"UnionStruct.Generated.{descriptor.StructName}"};";
         var usingsDeclaration = string.Join("\n", [
-            "using System.Diagnostics.CodeAnalysis;"
+            "using System.Diagnostics.CodeAnalysis;",
+            "using System.Runtime.InteropServices;"
         ]);
 
         var nullableDeclaration = "#nullable enable";
+        var layoutStructDeclaration = "[StructLayout(LayoutKind.Auto)]";
 
         return usingsDeclaration + "\n\n"
                                  + nullableDeclaration + "\n\n"
                                  + namespaceDeclaration + "\n\n"
                                  + enumDeclaration + "\n\n"
+                                 + layoutStructDeclaration + "\n"
                                  + structDeclaration + "\n"
                                  + "{" + "\n"
+                                 + unvaluedStateStaticMembersDeclaration + "\n\n"
                                  + constructorsDeclaration + "\n\n"
+                                 + stateConstructorDeclaration + "\n\n"
                                  + enumPropertyDeclaration + "\n\n"
                                  + methodsDeclaration + "\n\n"
+                                 + unvaluedStateMethodsDeclaration + "\n\n"
+                                 + foldMethodDeclaration + "\n\n"
+                                 + mapMethodsDeclaration + "\n\n"
                                  + staticMethodsDeclaration + "\n\n"
                                  + "}" + "\n";
+    }
+
+    private static string GenerateMapMethods(
+        ImmutableArray<UnionTypeDescriptor> descriptors,
+        ImmutableDictionary<string, string> stateEnumMap,
+        ImmutableArray<string> unvaluedEnums,
+        ImmutableArray<string> genericParams,
+        string structName,
+        string structGenerics
+    )
+    {
+        var sb = new StringBuilder();
+
+        var query = descriptors
+            .Where(x => x.UnionArguments.TryGetValue(nameof(UnionPartAttribute.AddMap), out var value) && value == "true")
+            .Select((x, i) => (x, i, genericParams.Contains(x.Type)));
+
+        foreach (var (descriptor, index, isGeneric) in query)
+        {
+            var genericPlaceHolders = string.Join(",", Enumerable.Range(0, genericParams.Length).Select(x => $"{{{x}}}"));
+            var genericFormat = $"<{genericPlaceHolders}>";
+            var outcomeParams = string.Format(genericFormat,
+                genericParams.Select<string, object>((x, i) => isGeneric && i == index ? "TOut" : x).ToArray());
+
+            var methodDeclaration =
+                $"public {structName}{outcomeParams} Map{stateEnumMap[descriptor.Name]}<TOut>(Func<{descriptor.Type}, TOut> mapper)";
+
+            var mainSwitch =
+                $"_ when Is{stateEnumMap[descriptor.Name]}(out var x) => {structName}{outcomeParams}.{stateEnumMap[descriptor.Name]}(mapper(x)),";
+
+            var restSwitch = string.Join('\n', descriptors
+                .Where(x => x.Name != descriptor.Name)
+                .Select(x =>
+                    $"_ when Is{stateEnumMap[x.Name]}(out var x) =>{structName}{outcomeParams}.{stateEnumMap[x.Name]}(x),")
+                .Concat(unvaluedEnums.Select(x => $"_ when Is{x}() => {structName}{outcomeParams}.{x},"))
+                .Append("_ => throw new NotImplementedException()"));
+
+            sb.Append(methodDeclaration).AppendLine(" => this switch")
+                .AppendLine("{")
+                .AppendLine(mainSwitch)
+                .AppendLine(restSwitch)
+                .AppendLine("};");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string GenerateFold(
+        ImmutableArray<UnionTypeDescriptor> descriptors,
+        ImmutableDictionary<string, string> stateEnumMap,
+        ImmutableArray<string> unvaluedEnums
+    )
+    {
+        var funcParameters = string.Join(',',
+            descriptors.Select(x => $"Func<{x.Type}, TOut> {stateEnumMap[x.Name]}")
+                .Concat(unvaluedEnums.Select(x => $"Func<TOut> {x}"))
+        );
+
+        var functionDeclaration = $"public TOut Fold<TOut>({funcParameters})";
+
+        var switchParts = string.Join('\n', descriptors
+            .Select(x => $"_ when Is{stateEnumMap[x.Name]}(out var x) => {stateEnumMap[x.Name]}(x),")
+            .Concat(unvaluedEnums.Select(x => $"_ when Is{x}() => {x}(),"))
+            .Append("_ => throw new NotImplementedException()"));
+
+        var switchFunction = $"{functionDeclaration} => this switch" + "\n"
+                                                                     + "{" + "\n"
+                                                                     + switchParts + "\n"
+                                                                     + "};" + "\n";
+
+        return switchFunction;
     }
 
     private static string GenerateTryGet(UnionTypeDescriptor descriptor, string stateEnumName, string enumType)

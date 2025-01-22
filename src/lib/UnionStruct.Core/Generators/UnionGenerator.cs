@@ -2,7 +2,10 @@
 using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Formatting;
+using Microsoft.CodeAnalysis.Text;
 using UnionStruct.CodeGeneration;
 using UnionStruct.Unions;
 
@@ -33,7 +36,13 @@ public class UnionGenerator : ISourceGenerator
             .Select(trees => new UnionDescriptor(
                 trees.NamespaceTree?.Name.ToString(),
                 trees.StructTree.Identifier.ToString(),
-                trees.StructTree.DescendantNodes().OfType<TypeParameterSyntax>().Select(x => x.Identifier.ToString()).ToImmutableArray(),
+                trees.StructTree.DescendantNodes().OfType<TypeParameterSyntax>().Select(x => x.Identifier.ToString())
+                    .ToImmutableArray(),
+                trees.StructTree.AttributeLists.SelectMany(x => x.Attributes)
+                    .Where(a => a.ToString().StartsWith("UnionPart"))
+                    .SelectMany(a =>
+                        a.ArgumentList?.Arguments.Select(arg => Extensions.ParseArgumentSyntax(arg.ToString()))
+                        ?? []).ToImmutableDictionary(x => x.Argument, x => x.Value),
                 trees.FieldsTree.Select(f => new UnionTypeDescriptor(
                     f.Declaration.Variables.Single().Identifier.ToString(),
                     f.DescendantNodes().OfType<TypeSyntax>().Last().ToString(),
@@ -51,7 +60,11 @@ public class UnionGenerator : ISourceGenerator
         foreach (var unionDescriptor in types)
         {
             var code = UnionCodeGenerator.GenerateUnionPartialImplementation(unionDescriptor);
-            context.AddSource($"{unionDescriptor.StructName}.Generated.cs", code);
+
+            var parsedCode = CSharpSyntaxTree.ParseText(code);
+            var formattedCode = parsedCode.GetRoot().NormalizeWhitespace().ToFullString();
+
+            context.AddSource($"{unionDescriptor.StructName}.Generated.cs", formattedCode);
         }
     }
 }

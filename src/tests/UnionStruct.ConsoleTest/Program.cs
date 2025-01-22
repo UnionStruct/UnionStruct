@@ -2,7 +2,11 @@
 
 using UnionStruct.ConsoleTest;
 
-Console.WriteLine("Hello, World!");
+var result = Result<int>.Success(123).Fold(
+    x => x.ToString(),
+    ex => ex.ToString()
+);
 
-var test1 = TestUnion<int>.AsOk(123);
-var test2 = TestUnion<int>.AsFail(new Exception("sosi"));
+var either = Either<int, string>.Left(123);
+
+var option = Option<int>.None.MapSome(x => x * 1213);
