@@ -9,7 +9,8 @@ public readonly struct UnionDescriptor
         string? ns,
         string structName,
         ImmutableArray<string> genericParameters,
-        ImmutableDictionary<string, string> unvaluedStates,
+        ImmutableArray<string> unvaluedStates,
+        ImmutableArray<string> usings,
         ImmutableArray<UnionTypeDescriptor> fields
     )
     {
@@ -17,13 +18,15 @@ public readonly struct UnionDescriptor
         StructName = structName;
         GenericParameters = genericParameters;
         UnvaluedStates = unvaluedStates;
+        Usings = usings;
         Fields = fields;
     }
 
     public string? Namespace { get; }
     public string StructName { get; }
     public ImmutableArray<string> GenericParameters { get; }
-    public ImmutableDictionary<string, string> UnvaluedStates { get; }
+    public ImmutableArray<string> UnvaluedStates { get; }
+    public ImmutableArray<string> Usings { get; }
     public ImmutableArray<UnionTypeDescriptor> Fields { get; }
 }
 

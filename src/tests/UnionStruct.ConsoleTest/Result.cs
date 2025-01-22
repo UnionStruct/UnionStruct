@@ -1,3 +1,4 @@
+using UnionStruct.ConsoleTest.Entity;
 using UnionStruct.Unions;
 
 namespace UnionStruct.ConsoleTest;
@@ -11,7 +12,7 @@ public readonly partial struct Result<T>
     [UnionPart(State = "Fail")] private readonly Exception? _exception;
 }
 
-[Union, UnionPart(State = "None")]
+[Union("None")]
 public readonly partial struct Option<T>
 {
     [UnionPart(State = "Some", AddMap = true)]
@@ -26,4 +27,15 @@ public readonly partial struct Either<TLeft, TRight>
 
     [UnionPart(State = "Right", AddMap = true)]
     private readonly TRight? _right;
+}
+
+
+[Union("Created", "Updated", "Deleted")]
+public readonly partial struct EntityEvent;
+
+[Union]
+public readonly partial struct CreateEntityResult
+{
+   [UnionPart(State = "Created")] private readonly TestEntity? _entity;
+   [UnionPart(State = "Fail")] private readonly Exception? _exception;
 }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
@@ -26,7 +27,9 @@ public class UnionGenerator : ISourceGenerator
                            && tree.AttributeLists.SelectMany(a => a.Attributes).Any(x => x.Name.ToString() == "Union"))
             .Select(tree => new
             {
-                NamespaceTree = tree.Parent as BaseNamespaceDeclarationSyntax,
+                NamespaceTree = Extensions.TraverseBack<BaseNamespaceDeclarationSyntax>(tree),
+                Usings = Extensions.TraverseBack<CompilationUnitSyntax>(tree)?.Usings.Select(x => x.Name.ToFullString())
+                    .ToImmutableArray(),
                 StructTree = tree,
                 FieldsTree = tree.DescendantNodes().OfType<FieldDeclarationSyntax>()
                     .Where(field =>
@@ -39,10 +42,11 @@ public class UnionGenerator : ISourceGenerator
                 trees.StructTree.DescendantNodes().OfType<TypeParameterSyntax>().Select(x => x.Identifier.ToString())
                     .ToImmutableArray(),
                 trees.StructTree.AttributeLists.SelectMany(x => x.Attributes)
-                    .Where(a => a.ToString().StartsWith("UnionPart"))
+                    .Where(a => a.ToString().StartsWith("Union"))
                     .SelectMany(a =>
-                        a.ArgumentList?.Arguments.Select(arg => Extensions.ParseArgumentSyntax(arg.ToString()))
-                        ?? []).ToImmutableDictionary(x => x.Argument, x => x.Value),
+                        a.ArgumentList?.Arguments.SelectMany(arg => Extensions.ParseUnvaluedStates(arg.ToString()))
+                        ?? []).ToImmutableArray(),
+                trees.Usings ?? ImmutableArray<string>.Empty,
                 trees.FieldsTree.Select(f => new UnionTypeDescriptor(
                     f.Declaration.Variables.Single().Identifier.ToString(),
                     f.DescendantNodes().OfType<TypeSyntax>().Last().ToString(),
@@ -71,6 +75,17 @@ public class UnionGenerator : ISourceGenerator
 
 file static class Extensions
 {
+    public static T? TraverseBack<T>(SyntaxNode syntaxTree) where T : SyntaxNode
+    {
+        var node = syntaxTree.Parent;
+        while (node is not (null or T))
+        {
+            node = node?.Parent;
+        }
+
+        return node as T;
+    }
+
     public static (string Argument, string Value) ParseArgumentSyntax(string syntax)
     {
         var span = syntax.AsSpan();
@@ -83,4 +98,7 @@ file static class Extensions
 
         return (argumentName.ToString(), argumentValue.ToString());
     }
+
+    public static IEnumerable<string> ParseUnvaluedStates(string syntax) =>
+        syntax.Split(",", StringSplitOptions.RemoveEmptyEntries);
 }

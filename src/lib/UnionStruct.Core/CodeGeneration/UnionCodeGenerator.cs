@@ -20,7 +20,7 @@ public static class UnionCodeGenerator
                     : SanitizeField(x.Name)
             );
 
-        var unvaluedEnums = descriptor.UnvaluedStates.Values.Select(SanitizeState).ToImmutableArray();
+        var unvaluedEnums = descriptor.UnvaluedStates.Select(SanitizeState).ToImmutableArray();
 
         var enumValues = string.Join(',', enumMap.Values.Concat(unvaluedEnums));
 
@@ -74,10 +74,11 @@ public static class UnionCodeGenerator
                 descriptor.StructName, genericDeclaration);
 
         var namespaceDeclaration = $"namespace {descriptor.Namespace ?? $"UnionStruct.Generated.{descriptor.StructName}"};";
-        var usingsDeclaration = string.Join("\n", [
+
+        var usingsDeclaration = string.Join("\n", descriptor.Usings.Select(x => $"using {x};").Concat([
             "using System.Diagnostics.CodeAnalysis;",
             "using System.Runtime.InteropServices;"
-        ]);
+        ]));
 
         var nullableDeclaration = "#nullable enable";
         var layoutStructDeclaration = "[StructLayout(LayoutKind.Auto)]";
