@@ -9,7 +9,6 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\lib\UnionStruct.Core\UnionStruct.Core.csproj" OutputItemType="Analyzer"/>
-        <ProjectReference Include="..\..\lib\UnionStruct.Domain\UnionStruct.Domain.csproj"/>
     </ItemGroup>
 
 </Project>

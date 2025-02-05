@@ -4,6 +4,5 @@
   </Folder>
   <Folder Name="lib">
     <Project Path="lib\UnionStruct.Core\UnionStruct.Core.csproj" Type="Classic C#" />
-    <Project Path="lib\UnionStruct.Domain\UnionStruct.Domain.csproj" Type="Classic C#" />
   </Folder>
 </Solution>

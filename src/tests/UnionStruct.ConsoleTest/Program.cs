@@ -1,7 +1,6 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
 using UnionStruct.ConsoleTest;
-using UnionStruct.Unions;
 
 var option = await Option<DateTimeOffset>.Some(DateTimeOffset.UtcNow)
     .MapSome(async x =>
