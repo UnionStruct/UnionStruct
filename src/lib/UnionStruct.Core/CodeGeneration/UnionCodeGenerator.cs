@@ -264,7 +264,7 @@ public static class UnionCodeGenerator
                                          + "}" + "\n";
 
         var ifMethodBody = $"if (Is{stateEnumName}(out var value)) {{ action(value); }} return this;";
-        var ifMethodDeclaration = $"public {fullStructType} If{stateEnumName}(Action<{descriptor.Type}> action)" + "\n"
+        var ifMethodDeclaration = $"public {fullStructType} When{stateEnumName}(Action<{descriptor.Type}> action)" + "\n"
             + "{" + "\n"
             + ifMethodBody
             + "}" + "\n";
