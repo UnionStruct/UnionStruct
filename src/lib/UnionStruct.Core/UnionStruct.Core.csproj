@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <TargetFramework>netstandard2.1</TargetFramework>
-        <IsPackable>false</IsPackable>
+        <IsPackable>true</IsPackable>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
 
@@ -22,6 +22,12 @@
         <RepositoryType>git</RepositoryType>
 
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+        <Title>UnionStruct</Title>
+
+        <Description>Small generator to do struct inheritance or discriminated unions</Description>
+
+        <PackageProjectUrl>https://github.com/UnionStruct/UnionStruct</PackageProjectUrl>
     </PropertyGroup>
 
     <ItemGroup>
