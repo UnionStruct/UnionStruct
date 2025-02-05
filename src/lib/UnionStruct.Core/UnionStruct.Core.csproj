@@ -18,7 +18,7 @@
         <Version>0.0.1</Version>
         <Authors>Siarhei Anisimau</Authors>
 
-        <RepositoryUrl>https://github.com/defoltusrnm/UnionStruct.git</RepositoryUrl>
+        <RepositoryUrl>https://github.com/UnionStruct/UnionStruct.git</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
     </PropertyGroup>
 
