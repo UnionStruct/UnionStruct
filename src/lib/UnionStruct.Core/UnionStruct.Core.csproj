@@ -28,6 +28,8 @@
         <Description>Small generator to do struct inheritance or discriminated unions</Description>
 
         <PackageProjectUrl>https://github.com/UnionStruct/UnionStruct</PackageProjectUrl>
+
+        <PackageLicenseUrl>https://github.com/UnionStruct/UnionStruct/blob/main/LICENSE</PackageLicenseUrl>
     </PropertyGroup>
 
     <ItemGroup>
