@@ -20,6 +20,8 @@
 
         <RepositoryUrl>https://github.com/UnionStruct/UnionStruct.git</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
+
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     </PropertyGroup>
 
     <ItemGroup>
