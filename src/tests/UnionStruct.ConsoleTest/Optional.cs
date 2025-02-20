@@ -5,5 +5,5 @@ namespace UnionStruct.ConsoleTest;
 [Union("None")]
 public readonly partial struct Optional<T>
 {
-    [UnionPart] private readonly T? _some;
+    [UnionPart(AddMap = true)] private readonly T? _some;
 }

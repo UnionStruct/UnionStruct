@@ -20,11 +20,10 @@ public static class CheckGenerators
             return new GeneratedChecks(methodsDeclaration);
         }
 
-        var unvaluedStateMethodsDeclaration = string.Join("\n", context.UnvaluedEnums.Select(x =>
-            $"public bool Is{x}() => State == {generatedEnum.Name}.{x};"));
-
-        var unvaluedWhenMethodsDeclaration = string.Join("\n", context.UnvaluedEnums.Select(x =>
+        var unvaluedMethodsDeclaration = string.Join("\n", context.UnvaluedEnums.Select(x =>
                 $$"""
+                  public bool Is{{x}}() => State == {{generatedEnum.Name}}.{{x}};
+
                   public {{context.FullUnionDeclaration}} When{{x}}(Action body)
                   {
                      if (State == {{generatedEnum.Name}}.{{x}})
@@ -38,43 +37,39 @@ public static class CheckGenerators
             )
         );
 
-        return new GeneratedChecks(
-            methodsDeclaration + "\n"
-                               + unvaluedStateMethodsDeclaration + "\n\n"
-                               + unvaluedWhenMethodsDeclaration
-        );
+        return new GeneratedChecks(methodsDeclaration + "\n" + unvaluedMethodsDeclaration);
     }
 
-    private static string GenerateTryGet(UnionTypeDescriptor descriptor, string stateEnumName, string enumType,
-        string fullStructType)
+    private static string GenerateTryGet(
+        UnionTypeDescriptor descriptor,
+        string stateEnumName,
+        string enumType,
+        string fullStructType
+    )
     {
-        const string returnTrueStatement = "return true;";
-        const string returnFalseStatement = "return false;";
+        return $$"""
+                 public bool Is{{stateEnumName}}([NotNullWhen(true)] out {{descriptor.Type}}? value) 
+                 {
+                    if (State == {{enumType}}.{{stateEnumName}}) 
+                    {
+                        value = {{descriptor.Name}}!;
+                        return true;
+                    }
+                    
+                    value = default;
+                    return false;
+                 }
 
-        var methodDeclaration = $"public bool Is{stateEnumName}([NotNullWhen(true)] out {descriptor.Type}? value)";
-        var ifDeclaration = $"if (State == {enumType}.{stateEnumName})";
-        var ifBody = $"value = {descriptor.Name}!;";
-        const string elseBody = "value = default;";
-
-        var isMethod = methodDeclaration + "\n"
-                                         + "{" + "\n"
-                                         + ifDeclaration + "\n"
-                                         + "{" + "\n"
-                                         + ifBody + "\n"
-                                         + returnTrueStatement + "\n"
-                                         + "}" + "\n"
-                                         + elseBody + "\n"
-                                         + returnFalseStatement + "\n"
-                                         + "}" + "\n";
-
-        var ifMethodBody = $"if (Is{stateEnumName}(out var value)) {{ action(value); }} return this;";
-        var ifMethodDeclaration = $"public {fullStructType} When{stateEnumName}(Action<{descriptor.Type}> action)" + "\n"
-            + "{" + "\n"
-            + ifMethodBody
-            + "}" + "\n";
-
-        return isMethod + "\n"
-                        + ifMethodDeclaration + "\n";
+                 public {{fullStructType}} When{{stateEnumName}}(Action<{{descriptor.Type}}> action) 
+                 {
+                    if (Is{{stateEnumName}}(out var value)) 
+                    {
+                        action(value);
+                    }
+                    
+                    return this;
+                 }
+                 """;
     }
 }
 
