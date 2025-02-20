@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using UnionStruct.Unions;
@@ -10,77 +9,20 @@ public static class UnionCodeGenerator
 {
     public static string GenerateUnionPartialImplementation(UnionDescriptor descriptor)
     {
-        const string stateConfig = nameof(UnionPartAttribute.State);
+        var unionContext = UnionContext.Create(descriptor);
+        
+        var generatedEnum = EnumDeclarationGenerator.Generate(unionContext);
+        var generatedInits = InitializationGenerator.Generate(unionContext);
+        var generatedChecks = CheckGenerators.Generate(unionContext, generatedEnum);
 
-        var enumMap = descriptor.Fields
-            .ToImmutableDictionary(
-                x => x.Name,
-                x => x.UnionArguments.TryGetValue(stateConfig, out var stateName)
-                    ? SanitizeState(stateName)
-                    : SanitizeField(x.Name)
-            );
+        var structDeclaration = $"public readonly partial struct {unionContext.FullUnionDeclaration}";
 
-        var unvaluedEnums = descriptor.UnvaluedStates.Select(SanitizeState).ToImmutableArray();
-
-        var enumValues = string.Join(',', enumMap.Values.Concat(unvaluedEnums));
-
-        var genericParameters = string.Join(',', descriptor.GenericParameters);
-        var genericDeclaration = genericParameters == string.Empty ? string.Empty : $"<{genericParameters}>";
-
-        var enumDeclaration = $"public enum {descriptor.StructName}State {{ {enumValues} }}";
-
-        var enumPropertyDeclaration = $"public {descriptor.StructName}State State {{ get; }}";
-
-        var structDeclaration = $"public readonly partial struct {descriptor.StructName}{genericDeclaration}";
-
-        var fieldsTuple = $"({string.Join(',', descriptor.Fields.Select(f => f.Name).Append("State"))})";
-
-        var paramsCount = descriptor.Fields.Length + 1;
-        var fieldsTupleInit = $"({string.Join(',', Enumerable.Range(0, paramsCount).Select(x => $"{{{x}}}"))})";
-
-        var constructorsDeclaration = string.Join('\n', descriptor.Fields.Select(
-            (field, i) =>
-                $"private {descriptor.StructName}({field.Type} arg) => {fieldsTuple} = {FormatDefaultExcept(fieldsTupleInit, paramsCount, i, $"{descriptor.StructName}State.{enumMap[field.Name]}")};"
-        ));
-
-        var stateConstructorDeclaration = string.Empty;
-        var unvaluedStateStaticMembersDeclaration = string.Empty;
-        var unvaluedStateMethodsDeclaration = string.Empty;
-        if (unvaluedEnums.Length != 0)
-        {
-            stateConstructorDeclaration =
-                $"private {descriptor.StructName}({descriptor.StructName}State arg) => {fieldsTuple} = {FormatDefaultExcept(fieldsTupleInit, paramsCount, paramsCount + 1, "arg")};";
-
-            unvaluedStateStaticMembersDeclaration = string.Join("\n", unvaluedEnums.Select(x =>
-                $"public static readonly {descriptor.StructName}{genericDeclaration} {x} = new({descriptor.StructName}State.{x});"));
-
-            unvaluedStateMethodsDeclaration = string.Join("\n", unvaluedEnums.Select(x =>
-                $"public bool Is{x}() => State == {descriptor.StructName}State.{x};"));
-
-            var unvaluedIfStateMethodsDeclaration = string.Join("\n", unvaluedEnums.Select(
-                x =>
-                    $"public {descriptor.StructName}{genericDeclaration} If{x}(Action body) {{ if (State == {descriptor.StructName}State.{x}) {{ body(); }} return this; }}"
-            ));
-
-            unvaluedStateMethodsDeclaration += "\n" + unvaluedIfStateMethodsDeclaration;
-        }
-
-        var staticMethodsDeclaration = string.Join('\n', descriptor.Fields.Select(
-            field =>
-                $"public static {descriptor.StructName}{genericDeclaration} {enumMap[field.Name]}({field.Type} arg) => new(arg);"
-        ));
-
-        var methodsDeclaration = string.Join("\n",
-            descriptor.Fields.Select(f => GenerateTryGet(f, enumMap[f.Name], $"{descriptor.StructName}State",
-                $"{descriptor.StructName}{genericDeclaration}"))
-        );
-
-        var foldMethodDeclaration = GenerateFold(descriptor.Fields, enumMap, unvaluedEnums);
+        var foldMethodDeclaration = GenerateFold(descriptor.Fields, unionContext.FieldNameToEnumMap, unionContext.UnvaluedEnums);
 
         var mapMethodsDeclaration = GenerateMapMethods(
             descriptor.Fields,
-            enumMap,
-            unvaluedEnums,
+            unionContext.FieldNameToEnumMap,
+            unionContext.UnvaluedEnums,
             descriptor.GenericParameters,
             descriptor.StructName
         );
@@ -98,19 +40,13 @@ public static class UnionCodeGenerator
         return usingsDeclaration + "\n\n"
                                  + nullableDeclaration + "\n\n"
                                  + namespaceDeclaration + "\n\n"
-                                 + enumDeclaration + "\n\n"
+                                 + generatedEnum.Body + "\n\n"
                                  + layoutStructDeclaration + "\n"
                                  + structDeclaration + "\n"
                                  + "{" + "\n"
-                                 + unvaluedStateStaticMembersDeclaration + "\n\n"
-                                 + constructorsDeclaration + "\n\n"
-                                 + stateConstructorDeclaration + "\n\n"
-                                 + enumPropertyDeclaration + "\n\n"
-                                 + methodsDeclaration + "\n\n"
-                                 + unvaluedStateMethodsDeclaration + "\n\n"
-                                 + foldMethodDeclaration + "\n\n"
-                                 + mapMethodsDeclaration + "\n\n"
-                                 + staticMethodsDeclaration + "\n\n"
+                                 + generatedInits.Body + "\n"
+                                 + generatedEnum.EnumPropertyDeclaration + "\n"
+                                 + generatedChecks.Body + "\n"
                                  + "}" + "\n";
     }
 
@@ -271,43 +207,6 @@ public static class UnionCodeGenerator
 
         return isMethod + "\n"
                         + ifMethodDeclaration + "\n";
-    }
-
-    private static string SanitizeState(string state)
-    {
-        var span = state.AsSpan();
-        var hasQuotes = span.StartsWith("\"") && span.EndsWith("\"");
-
-        if (hasQuotes)
-        {
-            span = span[1..^1];
-        }
-
-        return span.ToString();
-    }
-
-    private static string SanitizeField(string field)
-    {
-        var span = field.AsSpan();
-        var hasDash = span.StartsWith("_");
-
-        if (hasDash)
-        {
-            span = span[1..];
-        }
-
-        var isLowerStart = char.IsLower(span[0]);
-
-        if (isLowerStart)
-        {
-            Span<char> copySpan = stackalloc char[span.Length];
-            span.CopyTo(copySpan);
-            copySpan[0] = char.ToUpper(copySpan[0]);
-
-            span = new ReadOnlySpan<char>(copySpan.ToArray());
-        }
-
-        return span.ToString();
     }
 
     private static string FormatDefaultExcept(string init, int paramCount, int index, string stateValue)
