@@ -34,29 +34,40 @@ public class UnionGenerator : ISourceGenerator
                         field.AttributeLists.SelectMany(a => a.Attributes).Any(x => x.Name.ToString() == "UnionPart"))
                     .ToList()
             })
-            .Select(trees => new UnionDescriptor(
-                trees.NamespaceTree?.Name.ToString(),
-                trees.StructTree.Identifier.ToString(),
-                trees.StructTree.DescendantNodes().OfType<TypeParameterSyntax>().Select(x => x.Identifier.ToString())
-                    .ToImmutableArray(),
-                trees.StructTree.AttributeLists.SelectMany(x => x.Attributes)
-                    .Where(a => a.ToString().StartsWith("Union"))
-                    .SelectMany(a =>
-                        a.ArgumentList?.Arguments.SelectMany(arg => Extensions.ParseUnvaluedStates(arg.ToString()))
-                        ?? []).ToImmutableArray(),
-                trees.Usings ?? ImmutableArray<string>.Empty,
-                trees.FieldsTree.Select(f => new UnionTypeDescriptor(
-                    f.Declaration.Variables.Single().Identifier.ToString(),
-                    f.DescendantNodes().OfType<TypeSyntax>().Last().ToString(),
-                    f.AttributeLists.SelectMany(a => a.Attributes)
-                        .Where(a => a.ToString().StartsWith("UnionPart"))
+            .Select(trees =>
+            {
+                var constraint = trees.StructTree.DescendantNodes().OfType<TypeParameterConstraintClauseSyntax>();
+                var genericConstraints = constraint.ToImmutableDictionary(x => x.Name.ToString(), x => x.ToString());
+
+                return new UnionDescriptor(
+                    trees.NamespaceTree?.Name.ToString(),
+                    trees.StructTree.Identifier.ToString(),
+                    trees.StructTree.DescendantNodes().OfType<TypeParameterSyntax>()
+                        .Where(x => Extensions.TraverseBack<MethodDeclarationSyntax>(x) is null)
+                        .Select(x => x.Identifier.ToString())
+                        .Distinct()
+                        .ToImmutableArray(),
+                    trees.StructTree.AttributeLists.SelectMany(x => x.Attributes)
+                        .Where(a => a.ToString().StartsWith("Union"))
                         .SelectMany(a =>
-                            a.ArgumentList?.Arguments.Select(arg => Extensions.ParseArgumentSyntax(arg.ToString()))
-                            ?? []
-                        )
-                        .ToImmutableDictionary(x => x.Argument, x => x.Value)
-                )).ToImmutableArray()
-            ))
+                            a.ArgumentList?.Arguments.SelectMany(arg => Extensions.ParseUnvaluedStates(arg.ToString()))
+                            ?? []).ToImmutableArray(),
+                    trees.Usings ?? ImmutableArray<string>.Empty,
+                    trees.FieldsTree.Select(f => new UnionTypeDescriptor(
+                        f.Declaration.Variables.Single().Identifier.ToString(),
+                        f.DescendantNodes().OfType<TypeSyntax>().Last().ToString(),
+                        f.AttributeLists.SelectMany(a => a.Attributes)
+                            .Where(a => a.ToString().StartsWith("UnionPart"))
+                            .SelectMany(a =>
+                                a.ArgumentList?.Arguments.Select(arg => Extensions.ParseArgumentSyntax(arg.ToString()))
+                                ?? []
+                            )
+                            .ToImmutableDictionary(x => x.Argument, x => x.Value),
+                        Extensions.IsStruct(f, context.Compilation) && f.Declaration.Type is NullableTypeSyntax
+                    )).ToImmutableArray(),
+                    genericConstraints
+                );
+            })
             .ToImmutableArray();
 
         foreach (var unionDescriptor in types)
@@ -73,6 +84,15 @@ public class UnionGenerator : ISourceGenerator
 
 file static class Extensions
 {
+    public static bool IsStruct(FieldDeclarationSyntax f, Compilation compilation)
+    {
+        var semantic = compilation.GetSemanticModel(f.SyntaxTree);
+        return semantic.GetDeclaredSymbol(f.Declaration.Variables.Last()) is IFieldSymbol
+        {
+            Type.IsValueType: true,
+        };
+    }
+
     public static T? TraverseBack<T>(SyntaxNode syntaxTree) where T : SyntaxNode
     {
         var node = syntaxTree.Parent;

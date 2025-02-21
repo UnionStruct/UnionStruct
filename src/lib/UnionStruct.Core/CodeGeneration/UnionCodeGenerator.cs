@@ -26,7 +26,9 @@ public static class UnionCodeGenerator
 
         var usingsDeclaration = string.Join("\n", descriptor.Usings.Select(x => $"using {x};").Concat([
             "using System.Diagnostics.CodeAnalysis;",
-            "using System.Runtime.InteropServices;"
+            "using System.Runtime.InteropServices;",
+            "using System.Threading.Tasks;",
+            "using System;",
         ]));
 
         const string nullableDeclaration = "#nullable enable";
@@ -73,21 +75,28 @@ public static class UnionCodeGenerator
             var outcomeParams = string.Format(genericFormat,
                 genericParams.Select<string, object>((x, i) => isGeneric && i == index ? "TOut" : x).ToArray());
 
-            var newStructType = $"{structName}{outcomeParams}";
+            var newStructType = $"{structName}{(outcomeParams == "<>" ? string.Empty : outcomeParams)}";
+            var funcType = isGeneric ? "TOut" : descriptor.Type;
+            var genericType = isGeneric ? "<TOut>" : string.Empty;
+            
+            var genericConstraint =
+                isGeneric && context.Descriptor.GenericConstraints.TryGetValue(descriptor.Type, out var constraint)
+                    ? constraint.Replace(descriptor.Type, "TOut")
+                    : string.Empty;
 
             var restSwitch = string.Join('\n', descriptors
                 .Where(x => x.Name != descriptor.Name)
                 .Select(x =>
-                    $"_ when Is{stateEnumMap[x.Name]}(out var x) =>{newStructType}.{stateEnumMap[x.Name]}(x),")
+                    $"_ when Is{stateEnumMap[x.Name]}(out var x) =>{newStructType}.{stateEnumMap[x.Name]}(x{(x.IsNullable ? ".Value" : string.Empty)}),")
                 .Concat(unvaluedEnums.Select(x => $"_ when Is{x}() => {newStructType}.{x},"))
                 .Append("_ => throw new NotImplementedException()"));
 
             
             sb.AppendLine(
                 $$"""
-                  public {{newStructType}} Map{{stateName}}<TOut>(Func<{{descriptor.Type}}, TOut> mapper) => this switch
+                  public {{newStructType}} Map{{stateName}}{{genericType}}(Func<{{descriptor.Type}}, {{funcType}}> mapper) {{genericConstraint}} => this switch
                   {
-                      _ when Is{{stateName}}(out var x) => {{newStructType}}.{{stateName}}(mapper(x)),
+                      _ when Is{{stateName}}(out var x) => {{newStructType}}.{{stateName}}(mapper(x{{(descriptor.IsNullable ? ".Value" : string.Empty)}})),
                       {{restSwitch}}
                   };
                   """
@@ -95,9 +104,9 @@ public static class UnionCodeGenerator
 
             sb.AppendLine(
                 $$"""
-                  public {{newStructType}} Map{{stateName}}<TOut>(Func<{{descriptor.Type}}, {{newStructType}}> mapper) => this switch
+                  public {{newStructType}} Map{{stateName}}{{genericType}}(Func<{{descriptor.Type}}, {{newStructType}}> mapper) {{genericConstraint}} => this switch
                   {
-                      _ when Is{{stateName}}(out var x) => mapper(x),
+                      _ when Is{{stateName}}(out var x) => mapper(x{{(descriptor.IsNullable ? ".Value" : string.Empty)}}),
                       {{restSwitch}}
                   };
                   """
@@ -106,15 +115,15 @@ public static class UnionCodeGenerator
             var asyncRestSwitch = string.Join('\n', descriptors
                 .Where(x => x.Name != descriptor.Name)
                 .Select(x =>
-                    $"_ when Is{stateEnumMap[x.Name]}(out var x) => Task.FromResult({structName}{outcomeParams}.{stateEnumMap[x.Name]}(x)),")
-                .Concat(unvaluedEnums.Select(x => $"_ when Is{x}() => Task.FromResult({structName}{outcomeParams}.{x}),"))
-                .Append($"_ => Task.FromException<{structName}{outcomeParams}>(new NotImplementedException())"));
+                    $"_ when Is{stateEnumMap[x.Name]}(out var x) => Task.FromResult({newStructType}.{stateEnumMap[x.Name]}(x{(x.IsNullable ? ".Value" : string.Empty)})),")
+                .Concat(unvaluedEnums.Select(x => $"_ when Is{x}() => Task.FromResult({newStructType}.{x}),"))
+                .Append($"_ => Task.FromException<{newStructType}>(new NotImplementedException())"));
 
             sb.AppendLine(
                 $$"""
-                  public Task<{{newStructType}}> Map{{stateName}}Async<TOut>(Func<{{descriptor.Type}}, Task<TOut>> mapper) => this switch 
+                  public Task<{{newStructType}}> Map{{stateName}}Async{{genericType}}(Func<{{descriptor.Type}}, Task<{{funcType}}>> mapper) {{genericConstraint}} => this switch 
                   {
-                    _ when Is{{stateName}}(out var x) => mapper(x).ContinueWith(
+                    _ when Is{{stateName}}(out var x) => mapper(x{{(descriptor.IsNullable ? ".Value" : string.Empty)}}).ContinueWith(
                             t => t switch 
                             { 
                                 { Exception: null } => {{newStructType}}.{{stateName}}(t.Result),
@@ -129,9 +138,9 @@ public static class UnionCodeGenerator
 
             sb.AppendLine(
                 $$"""
-                  public Task<{{newStructType}}> Map{{stateName}}Async<TOut>(Func<{{descriptor.Type}}, Task<{{newStructType}}>> mapper) => this switch 
+                  public Task<{{newStructType}}> Map{{stateName}}Async{{genericType}}(Func<{{descriptor.Type}}, Task<{{newStructType}}>> mapper) {{genericConstraint}} => this switch 
                   {
-                    _ when Is{{stateName}}(out var x) => mapper(x).ContinueWith(
+                    _ when Is{{stateName}}(out var x) => mapper(x{{(descriptor.IsNullable ? ".Value" : string.Empty)}}).ContinueWith(
                             t => t switch 
                             { 
                                 { Exception: null } => t.Result,
@@ -165,7 +174,7 @@ public static class UnionCodeGenerator
         );
 
         var switchParts = string.Join('\n', descriptors
-            .Select(x => $"_ when Is{stateEnumMap[x.Name]}(out var x) => {stateEnumMap[x.Name]}(x),")
+            .Select(x => $"_ when Is{stateEnumMap[x.Name]}(out var x) => {stateEnumMap[x.Name]}(x{(x.IsNullable ? ".Value" : string.Empty)}),")
             .Concat(unvaluedEnums.Select(x => $"_ when Is{x}() => {x}(),"))
             .Append("_ => throw new NotImplementedException()"));
 

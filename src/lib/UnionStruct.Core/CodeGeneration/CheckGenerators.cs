@@ -64,7 +64,7 @@ public static class CheckGenerators
                  {
                     if (Is{{stateEnumName}}(out var value)) 
                     {
-                        action(value);
+                        action(value{{(descriptor.IsNullable ? ".Value" : string.Empty)}});
                     }
                     
                     return this;
