@@ -26,4 +26,12 @@ var optionTask = await Create()
         return x * 3;
     });
 
+_ = NumericOption<int>.Ok(123)
+    .MapOk(x => x + 123)
+    .MapOk(_ => NumericOption<int>.CalcFail);
+
+_ = DisposableOption<HttpClient>
+    .Some(new HttpClient())
+    .WhenSome(x => x.Dispose());
+
 Task<Optional<int>> Create() => Task.FromResult(Optional<int>.Some(123));
