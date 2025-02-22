@@ -15,7 +15,7 @@
         <RootNamespace>UnionStruct</RootNamespace>
         <PackageId>UnionStruct</PackageId>
         
-        <Version>0.0.4</Version>
+        <Version>0.0.5</Version>
         <Authors>Siarhei Anisimau</Authors>
 
         <RepositoryUrl>https://github.com/UnionStruct/UnionStruct.git</RepositoryUrl>
@@ -39,7 +39,6 @@
         </PackageReference>
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.0"/>
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.3.0"/>
-        <PackageReference Include="System.Memory" Version="4.6.0" />
     </ItemGroup>
 
     <ItemGroup>
