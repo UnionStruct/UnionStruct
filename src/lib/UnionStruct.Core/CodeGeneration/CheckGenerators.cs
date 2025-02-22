@@ -33,6 +33,24 @@ public static class CheckGenerators
                      
                      return this;
                   }
+                  
+                  public Task<{{context.FullUnionDeclaration}}> When{{x}}Async(Func<Task> body)
+                  {
+                     if (State == {{generatedEnum.Name}}.{{x}})
+                     {
+                         var toReturn = this;
+                         return body().ContinueWith(
+                            t => t switch 
+                            {
+                                { Exception: null } => toReturn,
+                                { Exception: not null } => throw new InvalidOperationException("Error when observing state {{x}}", innerException: t.Exception),
+                                _ => throw new InvalidOperationException("Error when observing state {{x}}")
+                            }
+                         );
+                     }
+                     
+                     return Task.FromResult(this);
+                  }
                   """
             )
         );
@@ -69,6 +87,24 @@ public static class CheckGenerators
                     
                     return this;
                  }
+                 
+                  public Task<{{fullStructType}}> When{{stateEnumName}}Async(Func<{{descriptor.Type}}, Task> action)
+                  {
+                     if (Is{{stateEnumName}}(out var value))
+                     {
+                         var toReturn = this;
+                         return action(value{{(descriptor.IsNullable ? ".Value" : string.Empty)}}).ContinueWith(
+                            t => t switch 
+                            {
+                                { Exception: null } => toReturn,
+                                { Exception: not null } => throw new InvalidOperationException("Error when observing state {{stateEnumName}}", innerException: t.Exception),
+                                _ => throw new InvalidOperationException("Error when observing state {{stateEnumName}}")
+                            }
+                         );
+                     }
+                     
+                     return Task.FromResult(this);
+                  }
                  """;
     }
 }

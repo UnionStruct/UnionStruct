@@ -17,9 +17,7 @@ public static class UnionCodeGenerator
 
         var structDeclaration = $"public readonly partial struct {unionContext.FullUnionDeclaration}";
 
-        var foldMethodDeclaration =
-            GenerateFold(descriptor.Fields, unionContext.FieldNameToEnumMap, unionContext.UnvaluedEnums);
-
+        var foldMethodDeclaration = GenerateFold(unionContext);
         var mapMethodsDeclaration = GenerateMapMethods(unionContext);
 
         var namespaceDeclaration = $"namespace {descriptor.Namespace ?? $"UnionStruct.Generated.{descriptor.StructName}"};";
@@ -157,12 +155,12 @@ public static class UnionCodeGenerator
         return sb.ToString();
     }
 
-    private static string GenerateFold(
-        ImmutableArray<UnionTypeDescriptor> descriptors,
-        ImmutableDictionary<string, string> stateEnumMap,
-        ImmutableArray<string> unvaluedEnums
-    )
+    private static string GenerateFold(UnionContext unionContext)
     {
+        var descriptors = unionContext.Descriptor.Fields;
+        var stateEnumMap = unionContext.FieldNameToEnumMap;
+        var unvaluedEnums = unionContext.UnvaluedEnums;
+        
         var funcParameters = string.Join(',',
             descriptors.Select(x => $"Func<{x.Type}, TOut> {stateEnumMap[x.Name]}")
                 .Concat(unvaluedEnums.Select(x => $"Func<TOut> {x}"))
